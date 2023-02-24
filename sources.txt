@@ -1,0 +1,23 @@
+Sources and inspiration:
+---------------------------
+1. Halftone Image Generator
+http://www.picturetopeople.org/image_effects/photo-halftone/halftone-image-generator.html
+
+2. Optimize Font Awesome to ridiculously low size
+https://icomoon.io/app/
+
+3. Cyberpunk retro crt style display
+https://gist.github.com/57-Wolve/1a1ddd46caffdf440c73
+http://aleclownes.com/2017/02/01/crt-display.html
+
+4. Dark/Light Mode Switch with CSS
+https://dev.to/ananyaneogi/create-a-dark-light-mode-switch-with-css-variables-34l8 
+
+5. CSS Minifier
+https://cssminifier.com/
+
+6. Glitch Effect
+https://glitchwitch.io/
+
+7. Markup Validation Service
+https://validator.w3.org/

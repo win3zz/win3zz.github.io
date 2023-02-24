@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /sources.txt
+
+Sitemap: https://win3zz.github.io/sitemap.xml
