@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" >
+<meta name="viewport" content="width=device-width,initial-scale=1" >
+<title>Thronglets (Throng)</title>
+<meta name="description" content="Experience Thronglets, Colin Ritman’s eerie game from the Black Mirror universe. A chaotic simulation where strange digital beings evolve, interact, and reveal unsettling intelligence. Explore their moods, behaviors, and collective hive-mind in this browser-based recreation.">
+<meta name="keywords" content="Thronglets, Colin Ritman, Black Mirror game, Tuckersoft, simulation game, digital creatures, hive mind, retro game recreation, browser game, AI lifeforms, dark simulation, Throng, villains fandom">
+
+<style>
+  :root{ --bg:#2f7d3b; --panel:#0f1720cc; --muted:#cbd5e1; --accent:#ffd94d; }
+  html,body{ height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+  body{ display:flex; align-items:flex-start; justify-content:center; gap:18px; background:linear-gradient(#1b5,#1a6);}
+  .wrap{ margin:20px; display:flex; gap:16px; align-items:flex-start;}
+  .canvas-wrap{ background: #0b2b11; border-radius:8px; padding:8px; box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+  canvas{ background: repeating-linear-gradient(45deg, rgba(255,255,255,.01) 0 1px, transparent 1px 6px), var(--bg); display:block; image-rendering: pixelated; border-radius:6px; }
+  .panel{ width:320px; color:white; background:var(--panel); padding:14px; border-radius:8px; box-shadow: 0 8px 30px rgba(2,6,23,.6); }
+  h1{ font-size:18px; margin:0 0 8px 0; }
+  .controls{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+  button{ background:#1f2937; color:white; border:none; padding:8px 10px; border-radius:6px; cursor:pointer; font-weight:600; }
+  .small{ font-size:13px; color:var(--muted); margin-bottom:8px; }
+  label{ font-size:13px; display:block; margin-bottom:6px; color:var(--muted); }
+  input[type=range]{ width:100%; }
+  .stat{ font-size:13px; color:var(--muted); margin-top:6px; }
+  .selectedBox{ margin-top:8px; background:rgba(255,255,255,.03); padding:8px; border-radius:6px; font-size:13px; }
+  .footer{ margin-top:12px; font-size:12px; color:#9aa7b7; }
+  a.link{ color:#9fbef6; text-decoration:none; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="canvas-wrap">
+      <canvas id="field" width="960" height="540"></canvas>
+    </div>
+
+    <div class="panel">
+      <h1>Thronglets (Throng)</h1>
+      <div class="small">Pixel-sprite thronglets (throng) wander, cluster and can be spawned / selected. Designed to mimic "Plaything" the fourth episode of the seventh season of Black Mirror..</div>
+
+      <div class="controls" style="margin-top:8px;">
+        <button id="btnSpawn">Spawn</button>
+        <button id="btnClear">Clear</button>
+        <button id="btnPause">Pause</button>
+        <button id="btnExport">Export PNG</button>
+      </div>
+
+      <label>Simulation speed: <span id="speedVal">1.0x</span></label>
+      <input id="speed" type="range" min="0.25" max="3" step="0.25" value="1">
+
+      <label style="margin-top:8px"><input id="spawnToggle" type="checkbox" checked> Spawn on click</label>
+
+      <div class="stat">Count: <strong id="count">0</strong> &nbsp; • &nbsp; FPS: <strong id="fps">0</strong></div>
+
+      <div class="selectedBox" id="inspect">No thronglet selected — click one on the field.</div>
+
+      <div class="footer">Click empty field to spawn (if enabled). Click thronglet to select. <!--<br>To use a sprite image instead of generated pixel art, replace <code>drawSprite</code> in the code.--></div>
+    </div>
+  </div>
+
+<script>
+/*
+  Thronglets — pure HTML + JS canvas
+  - Offscreen low-res sprite (16x16) scaled up for pixel look.
+  - Lightweight behaviour: random jitter + mild attraction to neighbours (clusters).
+  - Click to spawn/select; spawn toggle; speed control; export image.
+*/
+
+const canvas = document.getElementById('field');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+const offsize = 16;        // sprite base size (pixel-art)
+const scale = 3;           // how much to scale the pixel art (gives chunky pixelated sprites)
+const spriteSize = offsize * scale;
+
+const MAX_INITIAL = 80;
+let particles = [];
+let running = true;
+let spawnOnClick = true;
+let speedMultiplier = 1;
+let selectedId = null;
+
+const fpsEl = document.getElementById('fps');
+const countEl = document.getElementById('count');
+const speedEl = document.getElementById('speed');
+const speedValEl = document.getElementById('speedVal');
+const spawnToggle = document.getElementById('spawnToggle');
+const inspect = document.getElementById('inspect');
+
+document.getElementById('btnSpawn').onclick = () => spawnRandom(6);
+document.getElementById('btnClear').onclick = () => { particles = []; selectedId = null; updateUI(); };
+document.getElementById('btnPause').onclick = () => { running = !running; document.getElementById('btnPause').innerText = running ? 'Pause' : 'Start'; };
+document.getElementById('btnExport').onclick = exportPNG;
+speedEl.oninput = e => { speedMultiplier = Number(e.target.value); speedValEl.innerText = speedMultiplier.toFixed(2) + 'x'; };
+spawnToggle.onchange = e => spawnOnClick = e.target.checked;
+
+canvas.addEventListener('click', (ev) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = (ev.clientX - rect.left);
+  const y = (ev.clientY - rect.top);
+  // check for clicking a thronglet (topmost)
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    const dx = x - p.x, dy = y - p.y;
+    if (Math.hypot(dx,dy) < p.drawSize/2) {
+      selectedId = p.id;
+      updateUI();
+      return;
+    }
+  }
+  // else spawn if allowed
+  if (spawnOnClick) {
+    spawnAt(x, y, 1 + Math.floor(Math.random()*3));
+  } else {
+    selectedId = null;
+    updateUI();
+  }
+});
+
+// small RNG id
+let nextId = 1;
+function createParticle(x,y){
+  return {
+    id: nextId++,
+    x, y,
+    vx: (Math.random()*2-1)*20,
+    vy: (Math.random()*2-1)*20,
+    size: 10 + Math.random()*10, // logical size for behaviour (visual uses drawSize)
+    drawSize: spriteSize * (0.7 + Math.random()*0.6), // varied visual scale
+    colorSeed: Math.random()
+  };
+}
+
+function spawnRandom(n){
+  for(let i=0;i<n;i++){
+    particles.push(createParticle(Math.random()*W, Math.random()*H));
+  }
+  updateUI();
+}
+function spawnAt(x,y,n=1){
+  for(let i=0;i<n;i++){
+    particles.push(createParticle(x + (Math.random()-0.5)*20, y + (Math.random()-0.5)*20));
+  }
+  updateUI();
+}
+
+// generate an offscreen pixel-art sprite once and reuse
+const spriteCanvas = document.createElement('canvas');
+spriteCanvas.width = offsize; spriteCanvas.height = offsize;
+const sctx = spriteCanvas.getContext('2d');
+
+function drawSpriteBase(seed){
+  // clear
+  sctx.clearRect(0,0,offsize,offsize);
+
+  // We'll draw a simplified pixel-art Thronglet: head, eyes, body(blue), tiny pigtails.
+  // Use seed to pick slight color variation.
+  const y = Math.floor((seed*100) % 10);
+  const yellow = '#ffd94d';
+  const cheek = '#ffcc66';
+  const shirt = '#2da4ff';
+
+  // simple pixel painting (we paint by rectangles to create chunky pixels)
+  // head (5x5) roughly centered
+  const px = (offsize - 8) / 2;
+  const py = 1;
+  // fill head + ears/pigtails
+  function rect(x,y,w,h,color){ sctx.fillStyle=color; sctx.fillRect(x,y,w,h); }
+  rect(px,py,8,6,yellow); // head
+  // pigtails (left and right)
+  rect(px-1, py+1,1,2,yellow);
+  rect(px+8, py+1,1,2,yellow);
+  // cheeks
+  rect(px+1, py+4,2,1,cheek);
+  rect(px+5, py+4,2,1,cheek);
+  // eyes (dark)
+  rect(px+2, py+2,1,1,'#1b1b1b');
+  rect(px+5, py+2,1,1,'#1b1b1b');
+  // mouth (tiny)
+  rect(px+3, py+4,2,1,'#2b2b2b');
+
+  // body (4x3) below head
+  const bx = px+2, by = py+6;
+  rect(bx,by,4,3,shirt);
+
+  // small highlight on head
+  rect(px+1, py+1,1,1,'#fff2b8');
+
+  // tiny foot/leg pixels
+  rect(bx, by+3,1,1,'#2b4a77'); // shadow
+  rect(bx+3, by+3,1,1,'#2b4a77');
+}
+
+// create an upscaled image element for efficient drawing
+function makeSpriteImage(){
+  drawSpriteBase(Math.random());
+  // create scaled-up image for crisp pixelated look
+  const up = document.createElement('canvas');
+  up.width = offsize * scale;
+  up.height = offsize * scale;
+  const uctx = up.getContext('2d');
+  uctx.imageSmoothingEnabled = false;
+  uctx.drawImage(spriteCanvas, 0, 0, up.width, up.height);
+  return up;
+}
+
+let spriteImg = makeSpriteImage();
+
+// occasionally regenerate sprite to create slight variation between thronglets
+setInterval(()=>{ if(Math.random()<0.35) spriteImg = makeSpriteImage(); }, 3500);
+
+// physics / behaviour
+function step(dt){
+  // dt in seconds
+  const K_ATTR = 18;       // attraction strength
+  const K_REP = 2200;     // repulsion when too close
+  const jitter = 8;       // random jitter force
+  for(let i=0;i<particles.length;i++){
+    const a = particles[i];
+    let ax=0, ay=0;
+    for(let j=0;j<particles.length;j++){
+      if(i===j) continue;
+      const b = particles[j];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d2 = dx*dx + dy*dy + 0.0001;
+      const d = Math.sqrt(d2);
+      // attraction stronger to nearby but falls off
+      ax += (dx/d) * (K_ATTR * (b.size/12)) / (d+8);
+      ay += (dy/d) * (K_ATTR * (b.size/12)) / (d+8);
+      // repulsion when too close
+      if(d < 20){
+        ax -= (dx/d) * (K_REP / (d2 + 10));
+        ay -= (dy/d) * (K_REP / (d2 + 10));
+      }
+    }
+    ax += (Math.random()-0.5) * jitter;
+    ay += (Math.random()-0.5) * jitter;
+
+    // integrate
+    a.vx = (a.vx + ax * dt) * 0.92;
+    a.vy = (a.vy + ay * dt) * 0.92;
+
+    // speed cap depends on size (bigger slower)
+    const speed = Math.hypot(a.vx,a.vy);
+    const maxSpeed = Math.max(30, 200/(a.size+6));
+    if(speed > maxSpeed){
+      a.vx = a.vx / speed * maxSpeed;
+      a.vy = a.vy / speed * maxSpeed;
+    }
+
+    a.x += a.vx * dt;
+    a.y += a.vy * dt;
+
+    // bounds
+    if(a.x < 8){ a.x = 8; a.vx *= -0.4; }
+    if(a.y < 8){ a.y = 8; a.vy *= -0.4; }
+    if(a.x > W-8){ a.x = W-8; a.vx *= -0.4; }
+    if(a.y > H-8){ a.y = H-8; a.vy *= -0.4; }
+  }
+}
+
+// render loop
+let last = performance.now();
+let fps = 0, frames=0, fpsTimer = performance.now();
+function render(now){
+  requestAnimationFrame(render);
+  const elapsed = now - last;
+  last = now;
+  if(!running) return;
+
+  // multiple small steps depending on speed
+  const steps = Math.max(1, Math.round(speedMultiplier * 1));
+  const dt = (elapsed/1000) * (speedMultiplier / steps);
+  for(let s=0;s<steps;s++) step(dt);
+
+  // clear
+  ctx.clearRect(0,0,W,H);
+
+  // draw background subtle texture (we already have CSS background but draw a vignette)
+  // draw tinted grass gradient
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'rgba(18,97,43,0.15)');
+  g.addColorStop(1,'rgba(7,63,24,0.06)');
+  ctx.fillStyle = 'rgba(50,125,70,0.26)';
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,H);
+
+  // draw thronglets
+  for(let p of particles){
+    // draw sprite image centered at p.x,p.y with drawSize
+    const d = p.drawSize;
+    const half = d/2;
+    // choose sprite variation from spriteImg or small colorization via globalComposite
+    ctx.save();
+    // position
+    ctx.translate(p.x - half, p.y - half);
+    // draw scaled copy of spriteImg
+    ctx.drawImage(spriteImg, 0, 0, spriteImg.width, spriteImg.height, 0, 0, d, d);
+
+    // slight drop shadow
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, d-3, d, 3);
+    ctx.restore();
+
+    // highlight if selected
+    if(selectedId === p.id){
+      ctx.save();
+      ctx.strokeStyle = 'rgba(180,220,255,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, d/2 + 4, d/2 + 4, 0, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // HUD small count
+  countEl.innerText = particles.length;
+
+  // FPS calc
+  frames++;
+  if(now - fpsTimer >= 500){
+    fps = Math.round((frames*1000)/(now - fpsTimer));
+    fpsTimer = now; frames = 0;
+    fpsEl.innerText = fps;
+  }
+
+  // update inspect panel briefly
+  updateInspect();
+}
+
+// UI update
+function updateUI(){
+  document.getElementById('count').innerText = particles.length;
+  updateInspect();
+}
+
+function updateInspect(){
+  const p = particles.find(x => x.id === selectedId);
+  if(!p){
+    inspect.innerHTML = 'No thronglet selected — click one on the field.';
+    return;
+  }
+  inspect.innerHTML = `
+    <div><strong>ID:</strong> ${p.id}</div>
+    <div><strong>Pos:</strong> ${Math.round(p.x)}, ${Math.round(p.y)}</div>
+    <div><strong>Size:</strong> ${Math.round(p.size)}</div>
+    <div><strong>Velocity:</strong> ${p.vx.toFixed(1)}, ${p.vy.toFixed(1)}</div>
+    <div style="margin-top:6px"><button id="btnRemove" style="padding:6px 8px;border-radius:6px;background:#3b4252;color:white;border:none;">Remove</button></div>
+  `;
+  const rem = document.getElementById('btnRemove');
+  if(rem) rem.onclick = () => { particles = particles.filter(x => x.id !== selectedId); selectedId = null; updateUI(); };
+}
+
+// export canvas to PNG
+function exportPNG(){
+  const link = document.createElement('a');
+  link.href = canvas.toDataURL('image/png');
+  link.download = 'thronglets.png';
+  link.click();
+}
+
+// initialize
+spawnRandom(MAX_INITIAL);
+updateUI();
+requestAnimationFrame(render);
+
+// tweakable globals bound to UI
+speedMultiplier = Number(speedEl.value);
+speedValEl.innerText = speedMultiplier.toFixed(2) + 'x';
+spawnOnClick = spawnToggle.checked;
+
+// responsive: scale canvas down on small screens
+function fitCanvas(){
+  const maxW = window.innerWidth - 420;
+  const scaleFactor = Math.min(1, maxW / W);
+  canvas.style.width = Math.round(W * scaleFactor) + 'px';
+  canvas.style.height = Math.round(H * scaleFactor) + 'px';
+}
+window.addEventListener('resize', fitCanvas);
+fitCanvas();
+
+</script>
+</body>
+</html>
