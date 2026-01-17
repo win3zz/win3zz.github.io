@@ -1,1 +1,12 @@
-<!DOCTYPE html><html lang="en"><head><meta name="robots" content="noindex"/><title>BAD REQUEST</title><style>body,html{height:100%;margin:0}</style></head><body><div style="background-image:url(img/forestbridge.jpg);height:100%;background-position:center;background-size:cover;position:relative;color:#fff;font-family:'Courier New',Courier,monospace;font-size:25px"><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center"><h1>400 BAD REQUEST</h1><hr style="margin: auto;width: 40%"><p><a style="background-color:#4caf50;border:none;color:#fff;padding:15px 32px;text-align:center;text-decoration:none;display:inline-block;font-size:16px;margin:4px 2px;cursor:pointer" href="/" >HOMEPAGE</a></p></div></div></body></html>
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>404</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+#c{width:100vw;height:100vh;display:block}
+#t{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font:bold 40px Arial;letter-spacing:4px;text-shadow:0 0 10px #fff}
+</style>
+</head><body>
+<canvas id="c"></canvas><div id="t">NO SIGNAL</div>
+<script>
+let c=document.getElementById("c"),x=c.getContext("2d");function S(){c.width=innerWidth,c.height=innerHeight}S(),onresize=S,function e(){let t=c.width,n=c.height,a=x.getImageData(0,0,t,n),o=a.data;for(let e=0;e<o.length;e+=4){let t=255*Math.random();o[e]=o[e+1]=o[e+2]=t,o[e+3]=255}x.putImageData(a,0,0),requestAnimationFrame(e)}();let A=new(window.AudioContext||window.webkitAudioContext),b=A.createBuffer(1,2*A.sampleRate,A.sampleRate),d=b.getChannelData(0);for(let e=0;e<d.length;e++)d[e]=.25*(2*Math.random()-1);let n=A.createBufferSource(),f=A.createBiquadFilter();n.buffer=b,n.loop=1,f.type="lowpass",f.frequency.value=8e3,n.connect(f).connect(A.destination),n.start();
+</script>
+</body></html>
